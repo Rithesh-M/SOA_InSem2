@@ -1,0 +1,268 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-Commerce JWT Security Lab</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+}
+header {
+    background: #1e293b;
+    padding: 24px;
+    text-align: center;
+    border-bottom: 2px solid #38bdf8;
+}
+header h1 { color: #38bdf8; margin: 0 0 10px; }
+header p { margin: 0; color: #94a3b8; }
+.container {
+    max-width: 1050px;
+    margin: 30px auto;
+    padding: 0 20px;
+}
+.card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 22px;
+    border: 1px solid #334155;
+}
+h2 { color: #7dd3fc; margin-top: 0; }
+input {
+    padding: 12px;
+    background: #0f172a;
+    color: white;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    margin: 6px;
+    width: 200px;
+}
+button {
+    background: #0284c7;
+    color: white;
+    padding: 12px 18px;
+    border: none;
+    border-radius: 6px;
+    margin: 6px;
+    cursor: pointer;
+    font-weight: bold;
+}
+button:hover { background: #0369a1; }
+.danger { background: #dc2626; }
+.danger:hover { background: #b91c1c; }
+.success { background: #15803d; }
+.success:hover { background: #166534; }
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 15px;
+}
+.service {
+    background: #0f172a;
+    padding: 18px;
+    border-radius: 8px;
+}
+pre {
+    background: #020617;
+    padding: 18px;
+    border-radius: 8px;
+    color: #86efac;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    min-height: 90px;
+}
+.status { color: #facc15; font-weight: bold; }
+small { color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<header>
+    <h1>E-Commerce Microservices Security</h1>
+    <p>JWT Authentication | Role-Based Access Control</p>
+</header>
+
+<div class="container">
+
+<div class="card">
+    <h2>1. User Authentication</h2>
+    <p>Demo Accounts:</p>
+    <p>
+        ADMIN: admin / admin123<br>
+        SELLER: seller / seller123<br>
+        CUSTOMER: customer / customer123
+    </p>
+
+    <input id="username" placeholder="Username">
+    <input id="password" type="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <button class="danger" onclick="logout()">Logout</button>
+
+    <p class="status" id="loginStatus">Not logged in</p>
+    <small>JWT token is kept in browser session memory.</small>
+</div>
+
+<div class="card">
+    <h2>2. Microservice API Testing</h2>
+    <p>Click any API to verify role-based permissions.</p>
+
+    <div class="grid">
+        <div class="service">
+            <h3>Product Service</h3>
+            <button onclick="api('/products','GET')">
+                View Products
+            </button>
+            <button class="success"
+                onclick="api('/products/add','POST',
+                {name:'Demo Product'})">
+                Add Product
+            </button>
+        </div>
+
+        <div class="service">
+            <h3>Customer Service</h3>
+            <button class="danger"
+                onclick="api('/admin/users','GET')">
+                Admin: Manage Users
+            </button>
+        </div>
+
+        <div class="service">
+            <h3>Order Service</h3>
+            <button onclick="api('/orders','GET')">
+                View Orders
+            </button>
+        </div>
+
+        <div class="service">
+            <h3>Payment Service</h3>
+            <button class="success"
+                onclick="api('/payment','POST')">
+                Make Payment
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>3. Security Test Results</h2>
+    <p id="endpoint">Select an API to begin testing.</p>
+    <p id="httpStatus" class="status"></p>
+    <pre id="result">Waiting for API request...</pre>
+</div>
+
+<div class="card">
+    <h2>4. Role Permissions</h2>
+    <p>ADMIN: Manage users, products and all orders.</p>
+    <p>SELLER: View/add products and view related orders.</p>
+    <p>CUSTOMER: View products, own orders and make payments.</p>
+</div>
+
+</div>
+
+<script>
+let token = "";
+let currentRole = "";
+
+async function login() {
+    const username =
+        document.getElementById("username").value;
+    const password =
+        document.getElementById("password").value;
+
+    try {
+        const response = await fetch("/login", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({username, password})
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            token = data.token;
+            currentRole = data.role;
+
+            document.getElementById("loginStatus").textContent =
+                "Logged in as " + username + " (" + currentRole + ")";
+
+            showResult("/login", response.status, {
+                message: data.message,
+                role: data.role,
+                jwt_generated: true
+            });
+        } else {
+            token = "";
+            currentRole = "";
+            document.getElementById("loginStatus").textContent =
+                "Login failed";
+            showResult("/login", response.status, data);
+        }
+    } catch (error) {
+        showResult("/login", 0, {error: error.message});
+    }
+}
+
+function logout() {
+    token = "";
+    currentRole = "";
+    document.getElementById("loginStatus").textContent =
+        "Not logged in";
+    showResult("/logout", 200, {
+        message: "Logged out successfully"
+    });
+}
+
+async function api(endpoint, method, body = null) {
+    const headers = {
+        "Content-Type": "application/json"
+    };
+
+    if (token) {
+        headers["Authorization"] = "Bearer " + token;
+    }
+
+    const options = {method, headers};
+
+    if (body !== null) {
+        options.body = JSON.stringify(body);
+    }
+
+    try {
+        const response = await fetch(endpoint, options);
+        const data = await response.json();
+
+        showResult(method + " " + endpoint,
+                   response.status, data);
+    } catch (error) {
+        showResult(endpoint, 0, {error: error.message});
+    }
+}
+
+function showResult(endpoint, status, data) {
+    document.getElementById("endpoint").textContent =
+        "API: " + endpoint;
+
+    const statusText = {
+        200: "200 OK",
+        401: "401 Unauthorized",
+        403: "403 Forbidden",
+        404: "404 Not Found"
+    };
+
+    document.getElementById("httpStatus").textContent =
+        "HTTP Status: " + (statusText[status] || status);
+
+    document.getElementById("result").textContent =
+        JSON.stringify(data, null, 2);
+}
+</script>
+
+</body>
+</html>
